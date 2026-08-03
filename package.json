@@ -1,0 +1,15 @@
+{
+  "name": "seasonal-climate",
+  "version": "1.0.0",
+  "description": "Seasonal climate dashboard for Kazakhstan",
+  "private": true,
+  "scripts": {
+    "data:refresh": "node scripts/refresh-data.mjs",
+    "frontend:build": "npm --prefix frontend run build",
+    "backend:build": "npm --prefix backend run build"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
+}

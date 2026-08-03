@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: seasonal-climate-api
+    runtime: node
+    rootDir: backend
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: CORS_ORIGIN
+        sync: false
