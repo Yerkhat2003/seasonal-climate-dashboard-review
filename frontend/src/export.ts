@@ -25,6 +25,7 @@ const metricLabel: Record<Metric, string> = {
 
 const header = (value: string): Cell => ({ value, fontWeight: 'bold', textColor: '#FFFFFF', backgroundColor: colors.ink })
 const section = (value: string): Cell => ({ value, fontWeight: 'bold', textColor: '#183D3E', backgroundColor: '#DCEEE8' })
+const sectionRow = (value: string): Row => [section(value), { value: '', backgroundColor: '#DCEEE8' }]
 const title = (value: string): Cell => ({ value, fontWeight: 'bold', fontSize: 16, textColor: '#183D3E' })
 const kpiValue = (value: string | number): Cell => ({ value, fontWeight: 'bold', fontSize: 14, textColor: '#183D3E', backgroundColor: '#F4F8F6' })
 
@@ -88,6 +89,18 @@ async function chartImage(rows: ChartExportRow[], years: number[], titleText: st
   const climateLegend = rows.some((row) => typeof row.climate === 'number') ? `<g transform="translate(${left + years.length * 112},42)"><circle cx="0" cy="0" r="5" fill="${colors.climate}"/><text x="10" y="4">Норма</text></g>` : ''
   const scenarioLegend = rows.some((row) => typeof row.scenarioMedian === 'number') ? `<g transform="translate(${left + years.length * 112 + 108},42)"><circle cx="0" cy="0" r="5" fill="${colors.scenario}"/><text x="10" y="4">Сценарий</text></g>` : ''
   const forecastLegend = rows.some((row) => typeof row.operationalForecast === 'number') ? `<g transform="translate(${left + years.length * 112 + 230},42)"><circle cx="0" cy="0" r="5" fill="${colors.forecast}"/><text x="10" y="4">Прогноз</text></g>` : ''
+  const latestYear = years.at(-1)
+  const actualRows = latestYear ? rows.filter((row) => typeof row[String(latestYear)] === 'number') : []
+  const lastActual = actualRows.at(-1)
+  const forecastRows = rows.filter((row) => typeof row.operationalForecast === 'number')
+  const firstForecast = forecastRows[0]
+  const lastForecast = forecastRows.at(-1)
+  const forecastWindow = firstForecast && lastForecast
+    ? `<rect x="${x(firstForecast.week) - 10}" y="${top}" width="${Math.max(20, x(lastForecast.week) - x(firstForecast.week) + 20)}" height="${height - top - bottom}" fill="#DDECF8" opacity=".72"/><line x1="${x(firstForecast.week)}" x2="${x(firstForecast.week)}" y1="${top}" y2="${height - bottom}" stroke="${colors.forecast}" stroke-width="1.5" stroke-dasharray="5 4"/><text x="${x(firstForecast.week) + 7}" y="${top + 16}" fill="${colors.forecast}" font-family="Arial, sans-serif" font-size="11" font-weight="700">ПРОГНОЗ · ${firstForecast.week}-${lastForecast.week} нед.</text>`
+    : ''
+  const actualMarker = lastActual && latestYear && typeof lastActual[String(latestYear)] === 'number'
+    ? `<circle cx="${x(lastActual.week)}" cy="${y(lastActual[String(latestYear)]!)}" r="5.5" fill="#FFFFFF" stroke="${palette[(years.length - 1) % palette.length]}" stroke-width="3"/><text x="${x(lastActual.week) - 8}" y="${Math.max(top + 18, y(lastActual[String(latestYear)]!) - 12)}" text-anchor="end" fill="${colors.ink}" font-family="Arial, sans-serif" font-size="11" font-weight="700">ПОСЛЕДНИЙ ФАКТ</text>`
+    : ''
   const rangeRows = rows.filter((row) => typeof row.scenarioBase === 'number' && typeof row.scenarioRange === 'number')
   const scenarioArea = rangeRows.length > 1
     ? `<path d="${rangeRows.map((row, index) => `${index ? 'L' : 'M'}${x(row.week).toFixed(1)},${y(row.scenarioBase! + row.scenarioRange!).toFixed(1)}`).join(' ')} ${rangeRows.slice().reverse().map((row) => `L${x(row.week).toFixed(1)},${y(row.scenarioBase!).toFixed(1)}`).join(' ')} Z" fill="${colors.range}" opacity=".52"/>`
@@ -97,11 +110,13 @@ async function chartImage(rows: ChartExportRow[], years: number[], titleText: st
     <rect width="100%" height="100%" fill="#FFFFFF"/>
     <text x="${left}" y="24" fill="${colors.ink}" font-family="Arial, sans-serif" font-size="18" font-weight="700">${escapeXml(titleText)}</text>
     <g fill="${colors.muted}" font-family="Arial, sans-serif" font-size="12">${yearLegend}${climateLegend}${scenarioLegend}${forecastLegend}</g>
+    ${forecastWindow}
     ${yTicks.map((tick) => `<g><line x1="${left}" x2="${width - right}" y1="${y(tick)}" y2="${y(tick)}" stroke="${colors.grid}" stroke-width="1"/><text x="${left - 10}" y="${y(tick) + 4}" text-anchor="end" fill="${colors.muted}" font-family="Arial, sans-serif" font-size="11">${tick.toFixed(0)}°</text></g>`).join('')}
     ${xTicks.map((tick) => `<g><line x1="${x(tick)}" x2="${x(tick)}" y1="${top}" y2="${height - bottom}" stroke="${colors.grid}" stroke-width="1"/><text x="${x(tick)}" y="${height - 34}" text-anchor="middle" fill="${colors.muted}" font-family="Arial, sans-serif" font-size="11">${tick}-я нед.</text></g>`).join('')}
     ${scenarioArea}
     ${rows.some((row) => typeof row.climate === 'number') ? `<path d="${linePath(rows, 'climate', x, y)}" fill="none" stroke="${colors.climate}" stroke-width="3" stroke-dasharray="7 5"/>` : ''}
     ${years.map((year, index) => `<path d="${linePath(rows, String(year), x, y)}" fill="none" stroke="${palette[index % palette.length]}" stroke-width="${index === years.length - 1 ? 4 : 2.5}"/>`).join('')}
+    ${actualMarker}
     ${rows.some((row) => typeof row.operationalForecast === 'number') ? `<path d="${linePath(rows, 'operationalForecast', x, y)}" fill="none" stroke="${colors.forecast}" stroke-width="4"/>` : ''}
     ${rows.some((row) => typeof row.scenarioMedian === 'number') ? `<path d="${linePath(rows, 'scenarioMedian', x, y)}" fill="none" stroke="${colors.scenario}" stroke-width="3" stroke-dasharray="8 6"/>` : ''}
     <text x="${left}" y="${height - 10}" fill="${colors.muted}" font-family="Arial, sans-serif" font-size="11">Недельная температура, °C · факт и история из Open-Meteo Archive / ERA5</text>
@@ -146,6 +161,10 @@ export async function exportDashboardToExcel({
   const currentRows = latestYear ? visibleChartData.filter((row) => typeof row[String(latestYear)] === 'number') : []
   const currentRow = currentRows.at(-1)
   const actual = currentRow && latestYear ? currentRow[String(latestYear)] : null
+  const forecastRows = visibleChartData.filter((row) => typeof row.operationalForecast === 'number')
+  const forecastHorizon = showOperationalForecast && forecastRows.length
+    ? `${forecastRows[0].week}-${forecastRows.at(-1)?.week} неделя · ${number(forecastRows[0].operationalForecast)}-${number(forecastRows.at(-1)?.operationalForecast)} °C`
+    : 'не включён в отчёт'
   const normal = currentRow ? cities.map((city) => data.climatology[city.id]?.[currentRow.week - 1]?.[metric]).filter((value): value is number => typeof value === 'number') : []
   const normalAverage = normal.length ? normal.reduce((sum, value) => sum + value, 0) / normal.length : null
   const anomaly = typeof actual === 'number' && typeof normalAverage === 'number' ? actual - normalAverage : null
@@ -218,7 +237,7 @@ export async function exportDashboardToExcel({
     [title('SeasonalClimate · климатический отчёт')],
     [{ value: 'Срез сформирован по текущим фильтрам дашборда', textColor: colors.muted, fontStyle: 'italic' }],
     [],
-    [section('ПАРАМЕТРЫ ОТЧЁТА')],
+    sectionRow('ПАРАМЕТРЫ ОТЧЁТА'),
     [header('Города'), activeCities],
     [header('Метрика'), metricLabel[metric]],
     [header('Выбранные годы'), years.join(', ')],
@@ -227,14 +246,15 @@ export async function exportDashboardToExcel({
     [header('Данные сформированы'), new Date(data.generatedAt).toLocaleString('ru-RU')],
     [header('Источник'), 'Open-Meteo Archive / ERA5; оперативный прогноз: Open-Meteo Forecast'],
     [],
-    [section('КЛЮЧЕВЫЕ ВЫВОДЫ')],
+    sectionRow('КЛЮЧЕВЫЕ ВЫВОДЫ'),
     [header('Последняя фактическая неделя'), currentRow ? `${currentRow.week}-я неделя (${weekRange(currentRow.week)})` : 'нет данных'],
     [header('Температура'), kpiValue(typeof actual === 'number' ? `${actual.toFixed(1)} °C` : 'нет данных')],
+    [header('Горизонт оперативного прогноза'), forecastHorizon],
     [header('Отклонение от нормы'), kpiValue(typeof anomaly === 'number' ? `${anomaly >= 0 ? '+' : ''}${anomaly.toFixed(1)} °C` : 'нет сопоставления')],
     [header('Ближайший исторический аналог'), kpiValue(firstAnalog ? `${firstAnalog.year} · RMSE ${firstAnalog.rmse.toFixed(1)} °C` : 'доступен при одном городе')],
     [header('Средний тёплый сезон'), kpiValue(transition ? `${dayToDate(transition.springDay)} - ${dayToDate(transition.autumnDay)}` : 'доступен при одном городе')],
     [],
-    [section('КАК ЧИТАТЬ ГРАФИК')],
+    sectionRow('КАК ЧИТАТЬ ГРАФИК'),
     [{ value: `Сплошные линии: выбранные годы.${showClimate ? ' Зелёный пунктир: климатическая норма.' : ''}${showOperationalForecast ? ' Синяя линия: оперативный прогноз до 16 дней.' : ''}${showScenario ? ' Охристый пунктир и заливка: исторический сценарий top-3 аналогов, не метеорологический прогноз.' : ''}`, textColor: colors.muted }],
   ]
 
@@ -242,7 +262,7 @@ export async function exportDashboardToExcel({
     {
       sheet: 'Отчёт',
       data: reportData,
-      columns: [{ width: 29 }, { width: 84 }],
+      columns: [{ width: 43 }, { width: 88 }],
       showGridLines: false,
       images: chart ? [{ content: chart, contentType: 'image/png', width: 1120, height: 480, dpi: 96, anchor: { row: 22, column: 1 }, title: 'Температурная динамика', description: 'График выбранного среза температуры' }] : undefined,
     },
@@ -279,21 +299,21 @@ export async function exportDashboardToExcel({
       data: [
         [title('Методика и источники')],
         [],
-        [section('ИСТОЧНИКИ')],
+        sectionRow('ИСТОЧНИКИ'),
         [header('Исторические данные'), 'Open-Meteo Archive: ERA5/ERA5-Land по координатам городов. Ряды пересчитываются ежедневно.'],
         [header('Оперативный прогноз'), 'Open-Meteo Forecast: горизонт до 16 дней. Это отдельный от исторического сценария источник.'],
         [],
-        [section('РАСЧЁТЫ')],
+        sectionRow('РАСЧЁТЫ'),
         [header('Недельные значения'), 'Среднее дневных temperature_2m_mean, temperature_2m_max или temperature_2m_min за неделю года.'],
         [header('Климатическая норма'), 'Среднее недельных значений всех завершённых лет базового периода.'],
         [header('Граница тёплого сезона'), 'Две последовательные недели со средней температурой не ниже 5 °C; дата усредняется по историческим годам.'],
         [header('Аналоги'), 'Три завершённых года с минимальным RMSE по уже наблюдаемым неделям текущего года.'],
         [header('Backtest'), 'Проверка аналогового сценария на завершённых прошлых годах: сравнение будущего участка с фактически произошедшей температурой.'],
         [],
-        [section('ОГРАНИЧЕНИЯ')],
+        sectionRow('ОГРАНИЧЕНИЯ'),
         [{ value: 'ERA5 является сеточным реанализом, поэтому локальные эффекты станции и городской застройки могут отличаться. Аналоговый сценарий описывает исторические варианты развития, а не заменяет метеорологический прогноз.', textColor: colors.muted }],
       ],
-      columns: [{ width: 30 }, { width: 88 }],
+      columns: [{ width: 36 }, { width: 88 }],
       showGridLines: false,
     },
   ], { fontFamily: 'Calibri', fontSize: 11 })
