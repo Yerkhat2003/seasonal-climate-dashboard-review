@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Activity, CalendarDays, CloudSun, Info, Layers3, MapPin, Maximize2, RefreshCw, Share2, Sparkles, ThermometerSun, X } from 'lucide-react'
+import { Activity, CalendarDays, CloudSun, Download, Info, Layers3, MapPin, Maximize2, RefreshCw, Share2, Sparkles, ThermometerSun, X } from 'lucide-react'
 import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import './App.css'
 import { loadDashboard, loadForecast } from './api'
@@ -14,6 +14,7 @@ type DashboardPreferences = {
   metric?: Metric
   showClimate?: boolean
   showPrediction?: boolean
+  showForecast?: boolean
 }
 
 function readPreferences(): DashboardPreferences {
@@ -27,6 +28,7 @@ function readPreferences(): DashboardPreferences {
         metric: metric === 'mean' || metric === 'max' || metric === 'min' ? metric : undefined,
         showClimate: query.get('n') === null ? undefined : query.get('n') === '1',
         showPrediction: query.get('p') === null ? undefined : query.get('p') === '1',
+        showForecast: query.get('f') === null ? undefined : query.get('f') === '1',
       }
     }
     return JSON.parse(localStorage.getItem(PREFERENCES_KEY) ?? '{}') as DashboardPreferences
@@ -69,11 +71,13 @@ function App() {
   const [metric, setMetric] = useState<Metric>('mean')
   const [showClimate, setShowClimate] = useState(true)
   const [showPrediction, setShowPrediction] = useState(true)
+  const [showForecast, setShowForecast] = useState(true)
   const [isChartExpanded, setIsChartExpanded] = useState(false)
   const [isChartClosing, setIsChartClosing] = useState(false)
   const [forecastStatus, setForecastStatus] = useState('Загружаем статус…')
   const [forecast, setForecast] = useState<ForecastData | null>(null)
   const [shareCopied, setShareCopied] = useState(false)
+  const [exportStatus, setExportStatus] = useState('')
 
   const closeExpandedChart = () => {
     setIsChartClosing(true)
@@ -94,19 +98,20 @@ function App() {
       if (saved.metric) setMetric(saved.metric)
       if (typeof saved.showClimate === 'boolean') setShowClimate(saved.showClimate)
       if (typeof saved.showPrediction === 'boolean') setShowPrediction(saved.showPrediction)
+      if (typeof saved.showForecast === 'boolean') setShowForecast(saved.showForecast)
     }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Ошибка данных'))
   }
   useEffect(refresh, [])
   useEffect(() => {
     if (!data) return
     try {
-      localStorage.setItem(PREFERENCES_KEY, JSON.stringify({ cityIds, years, metric, showClimate, showPrediction }))
-      const query = new URLSearchParams({ c: cityIds.join(','), y: years.join(','), m: metric, n: showClimate ? '1' : '0', p: showPrediction ? '1' : '0' })
+      localStorage.setItem(PREFERENCES_KEY, JSON.stringify({ cityIds, years, metric, showClimate, showPrediction, showForecast }))
+      const query = new URLSearchParams({ c: cityIds.join(','), y: years.join(','), m: metric, n: showClimate ? '1' : '0', p: showPrediction ? '1' : '0', f: showForecast ? '1' : '0' })
       window.history.replaceState(null, '', `${window.location.pathname}?${query.toString()}${window.location.hash}`)
     } catch {
       // The dashboard still works when browser storage is unavailable.
     }
-  }, [cityIds, data, metric, showClimate, showPrediction, years])
+  }, [cityIds, data, metric, showClimate, showForecast, showPrediction, years])
 
   const copyShareLink = async () => {
     try {
@@ -116,6 +121,18 @@ function App() {
     } catch {
       setShareCopied(false)
     }
+  }
+  const downloadExcel = async () => {
+    if (!data || !cities.length) return
+    setExportStatus('Готовим отчёт…')
+    try {
+      const { exportDashboardToExcel } = await import('./export')
+      await exportDashboardToExcel({ data, cities, years, metric, showClimate, showPrediction, showOperationalForecast, chartData })
+      setExportStatus('Отчёт скачан')
+    } catch {
+      setExportStatus('Не удалось создать файл')
+    }
+    window.setTimeout(() => setExportStatus(''), 2200)
   }
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -214,8 +231,10 @@ function App() {
   const backtest = primary ? data.backtests?.[primary.id] : undefined
   const transition = primary ? data.transitions[primary.id] : undefined
   const latestYear = data.years.at(-1)
-  const showScenario = showPrediction && cities.length === 1 && latestYear !== undefined && years.includes(latestYear) && analogs.length >= 2
-  const showOperationalForecast = cities.length === 1 && latestYear !== undefined && years.includes(latestYear) && Boolean(forecast?.daily?.time?.length)
+  const canUseSingleCityLayers = cities.length === 1 && latestYear !== undefined && years.includes(latestYear)
+  const showScenario = showPrediction && canUseSingleCityLayers && analogs.length >= 2
+  const hasOperationalForecast = canUseSingleCityLayers && Boolean(forecast?.daily?.time?.length)
+  const showOperationalForecast = showForecast && hasOperationalForecast
   const latestActualIndex = primary && latestYear !== undefined ? (data.series[primary.id]?.[latestYear] ?? []).reduce((last, point, index) => point.mean === null ? last : index, -1) : -1
   const latestActual = primary && latestActualIndex >= 0 && latestYear !== undefined ? data.series[primary.id]?.[latestYear]?.[latestActualIndex]?.mean : null
   const currentNormal = primary && latestActualIndex >= 0 ? data.climatology[primary.id]?.[latestActualIndex]?.mean : null
@@ -226,7 +245,7 @@ function App() {
   return <main className="app-shell">
     <header className="topbar">
       <a className="brand" href="#overview"><span className="brand-mark">SC</span>SeasonalClimate</a>
-      <nav className="topnav" aria-label="Навигация"><a href="#faq">FAQ · методология</a><button className="share-button" onClick={copyShareLink}><Share2 size={13} />{shareCopied ? 'Ссылка скопирована' : 'Поделиться'}</button></nav>
+      <nav className="topnav" aria-label="Навигация"><a href="#faq">FAQ · методология</a><button className="share-button" onClick={downloadExcel} disabled={!cities.length}><Download size={13} />{exportStatus || 'Excel'}</button><button className="share-button" onClick={copyShareLink}><Share2 size={13} />{shareCopied ? 'Ссылка скопирована' : 'Поделиться'}</button></nav>
       <span className="freshness"><i /> Данные: {new Date(data.generatedAt).toLocaleDateString('ru-RU')}</span>
     </header>
     <section className="hero" id="overview">
@@ -266,7 +285,7 @@ function App() {
       <div className="section-title"><div><span className="section-kicker">ДИНАМИКА ТЕМПЕРАТУРЫ</span><h2>{cities.length === 1 ? primary?.name : `${cities.length} города, среднее`}</h2></div>
         <div className="chart-actions"><button className="expand-chart" onClick={() => isChartExpanded ? closeExpandedChart() : setIsChartExpanded(true)} title={isChartExpanded ? 'Закрыть расширенный график' : 'Развернуть график'}>{isChartExpanded ? <X size={16} /> : <Maximize2 size={16} />}<span>{isChartExpanded ? 'Закрыть' : 'Развернуть'}</span></button><div className="metric-switch">{(['mean', 'max', 'min'] as Metric[]).map((item) => <button className={metric === item ? 'active' : ''} onClick={() => setMetric(item)} key={item}>{metricLabel[item]}</button>)}</div></div>
       </div>
-      <div className="chart-controls"><details className="year-picker"><summary>Годы: выбрано {years.length}</summary><div className="year-menu"><div className="year-presets"><button onClick={() => latestYear !== undefined && setYears([latestYear])}>Текущий</button><button onClick={() => setYears(data.years.slice(-3))}>3 года</button><button onClick={() => setYears(data.years.slice(-5))}>5 лет</button><button onClick={() => setYears(data.years)}>Весь архив</button></div><div className="year-row">{data.years.map((year) => <button className={years.includes(year) ? 'year selected' : 'year'} key={year} onClick={() => toggleYear(year)}>{year}</button>)}</div></div></details><div className="layer-toggles"><label className="toggle"><input type="checkbox" checked={showClimate} onChange={(event) => setShowClimate(event.target.checked)} /> Климатическая норма <span className="hover-tip norm-info" tabIndex={0} data-tooltip="Включает зелёную пунктирную линию: среднюю температуру по завершённым годам. Сравнивайте с ней выбранный год, чтобы видеть отклонение от типичного сезона."><Info size={13} /></span></label>{cities.length === 1 && latestYear !== undefined && years.includes(latestYear) && <label className="toggle"><input type="checkbox" checked={showPrediction} onChange={(event) => setShowPrediction(event.target.checked)} /> Аналоговый сценарий <span className="hover-tip norm-info" tabIndex={0} data-tooltip="Включает или скрывает пунктирное продолжение текущего года и диапазон top-3 аналогов. Это исторический сценарий, не оперативный прогноз."><Info size={13} /></span></label>}</div></div>
+      <div className="chart-controls"><details className="year-picker"><summary>Годы: выбрано {years.length}</summary><div className="year-menu"><div className="year-presets"><button onClick={() => latestYear !== undefined && setYears([latestYear])}>Текущий</button><button onClick={() => setYears(data.years.slice(-3))}>3 года</button><button onClick={() => setYears(data.years.slice(-5))}>5 лет</button><button onClick={() => setYears(data.years)}>Весь архив</button></div><div className="year-row">{data.years.map((year) => <button className={years.includes(year) ? 'year selected' : 'year'} key={year} onClick={() => toggleYear(year)}>{year}</button>)}</div></div></details><div className="layer-toggles"><label className="toggle"><input type="checkbox" checked={showClimate} onChange={(event) => setShowClimate(event.target.checked)} /> Климатическая норма <span className="hover-tip norm-info" tabIndex={0} data-tooltip="Включает зелёную пунктирную линию: среднюю температуру по завершённым годам. Сравнивайте с ней выбранный год, чтобы видеть отклонение от типичного сезона."><Info size={13} /></span></label><label className={canUseSingleCityLayers && analogs.length >= 2 ? 'toggle' : 'toggle is-disabled'}><input type="checkbox" disabled={!canUseSingleCityLayers || analogs.length < 2} checked={canUseSingleCityLayers && analogs.length >= 2 && showPrediction} onChange={(event) => setShowPrediction(event.target.checked)} /> Аналоговый сценарий <span className="hover-tip norm-info" tabIndex={0} data-tooltip={canUseSingleCityLayers && analogs.length >= 2 ? 'Включает или скрывает пунктирное продолжение текущего года и диапазон top-3 аналогов. Это исторический сценарий, не оперативный прогноз.' : 'Доступен для одного города при выбранном текущем году: у набора городов нет единой исторической траектории для честного подбора аналога.'}><Info size={13} /></span></label><label className={hasOperationalForecast ? 'toggle' : 'toggle is-disabled'}><input type="checkbox" disabled={!hasOperationalForecast} checked={hasOperationalForecast && showForecast} onChange={(event) => setShowForecast(event.target.checked)} /> Оперативный прогноз <span className="hover-tip norm-info" tabIndex={0} data-tooltip={hasOperationalForecast ? 'Включает или скрывает синюю линию прогноза Open-Meteo до 16 дней. Это краткосрочный метеорологический прогноз, а не исторический сценарий.' : canUseSingleCityLayers ? 'Оперативный прогноз появится после загрузки данных Open-Meteo.' : 'Доступен для одного города при выбранном текущем году: прогноз API строится по конкретным координатам.'}><Info size={13} /></span></label></div></div>
       <div className="chart-wrap">
         <ResponsiveContainer width="100%" height="100%"><ComposedChart data={chartData} margin={{ top: 12, right: 8, left: 6 }}>
           <CartesianGrid strokeDasharray="3 5" vertical={false} stroke="#e8edef" /><XAxis dataKey="week" tickLine={false} axisLine={false} interval="preserveStartEnd" /><YAxis tickLine={false} axisLine={false} unit="°" width={44} />
@@ -316,6 +335,7 @@ function App() {
         <details><summary>Как работает выбор периода и mobile focus?</summary><p>На новом мобильном устройстве по умолчанию включается текущий год, чтобы график оставался читаемым. В меню «Годы» доступны быстрые режимы: текущий год, последние 3 года, последние 5 лет и весь архив. Можно также вручную включать отдельные годы.</p></details>
         <details><summary>Сохраняется ли мой выбор после обновления страницы?</summary><p>Да. Браузер сохраняет выбранные города, годы, температурную метрику и включённые слои в localStorage. При следующем открытии эти настройки восстанавливаются. На сервер и сторонним сервисам эта информация не отправляется.</p></details>
         <details><summary>Как поделиться конкретным видом дашборда?</summary><p>Кнопка «Поделиться» копирует ссылку с текущим набором городов, годами, метрикой и слоями. Открывший ссылку увидит тот же выбранный срез, если нужные города и годы есть в актуальной версии данных.</p></details>
+        <details><summary>Что выгружается в Excel?</summary><p>Кнопка «Excel» скачивает текущий срез, а не весь набор без фильтров: выбранные города, годы, метрика и включённые слои. Первый лист содержит готовую сводку с выводами и графиком. Далее доступны недельные значения графика, отдельные ряды каждого выбранного города, границы сезонов, аналоги с backtest и лист с методикой. График встроен в файл как изображение, поэтому его можно открыть и отправить без доступа к дашборду.</p></details>
         <details><summary>Что делает кнопка «Развернуть» у графика?</summary><p>Она открывает график в полноэкранном режиме. Выбор городов, годов, метрики и слоёв сохраняется. Закрыть режим можно кнопкой, клавишей Escape или кликом по затемнённому фону.</p></details>
         <details><summary>На что влияет «Климатическая норма»?</summary><p>Этот переключатель показывает или скрывает зелёную пунктирную линию. Она построена из средних недельных температур всех завершённых лет базового периода и нужна, чтобы быстро увидеть, насколько выбранный год выше или ниже типичного сезонного уровня.</p></details>
         <details><summary>Что показывает карточка «Сейчас vs норма»?</summary><p>Она сравнивает последнюю доступную фактическую неделю с климатической нормой той же недели. Положительное значение означает, что сейчас теплее типичного уровня, отрицательное значение означает, что холоднее.</p></details>
