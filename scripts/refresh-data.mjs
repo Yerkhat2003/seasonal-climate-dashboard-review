@@ -12,7 +12,7 @@ const cities = [
 
 const currentYear = new Date().getUTCFullYear()
 const startYear = 2011
-const warmSeasonThreshold = 15
+const warmSeasonThreshold = 5
 const dateKey = (date) => date.toISOString().slice(0, 10)
 const weekOfYear = (value) => {
   const date = new Date(`${value}T00:00:00Z`)
