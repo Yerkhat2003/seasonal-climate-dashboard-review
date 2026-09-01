@@ -12,7 +12,7 @@ const cities = [
 
 const currentYear = new Date().getUTCFullYear()
 const startYear = 2011
-const warmSeasonThreshold = 5
+const warmSeasonThreshold = 15
 const dateKey = (date) => date.toISOString().slice(0, 10)
 const weekOfYear = (value) => {
   const date = new Date(`${value}T00:00:00Z`)
@@ -75,8 +75,8 @@ function transitions(records) {
   const spring = []; const autumn = []
   for (const year of byYear.values()) {
     const weeks = year.sort((a, b) => a.week - b.week)
-    const springWeek = weeks.find((week, index) => week.week >= 8 && week.week <= 30 && mean(week.mean) <= warmSeasonThreshold && mean(weeks[index + 1]?.mean ?? []) <= warmSeasonThreshold)?.week
-    const autumnWeek = [...weeks].reverse().find((week, reverseIndex, reversed) => week.week >= 28 && week.week <= 48 && mean(week.mean) <= warmSeasonThreshold && mean(reversed[reverseIndex + 1]?.mean ?? []) <= warmSeasonThreshold)?.week
+    const springWeek = weeks.find((week, index) => week.week >= 8 && week.week <= 30 && mean(week.mean) >= warmSeasonThreshold && mean(weeks[index + 1]?.mean ?? []) >= warmSeasonThreshold)?.week
+    const autumnWeek = [...weeks].reverse().find((week, reverseIndex, reversed) => week.week >= 28 && week.week <= 48 && mean(week.mean) >= warmSeasonThreshold && mean(reversed[reverseIndex + 1]?.mean ?? []) >= warmSeasonThreshold)?.week
     if (springWeek) spring.push(springWeek * 7)
     if (autumnWeek) autumn.push(autumnWeek * 7)
   }
